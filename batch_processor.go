@@ -65,6 +65,7 @@ type batchSpanProcessor struct {
 
 	batch      []trace.ReadOnlySpan
 	batchMutex sync.Mutex
+	batchSpans map[otrace.SpanID]struct{}
 	timer      *time.Timer
 	stopWait   sync.WaitGroup
 	stopOnce   sync.Once
@@ -78,7 +79,7 @@ var _ trace.SpanProcessor = (*batchSpanProcessor)(nil)
 // span batches to the exporter with the supplied options.
 //
 // If the exporter is nil, the span processor will perform no action.
-func NewBatchSpanProcessor(exporter trace.SpanExporter, options ...BatchSpanProcessorOption) trace.SpanProcessor {
+func NewBatchSpanProcessor(exporter trace.SpanExporter, options ...BatchSpanProcessorOption) *batchSpanProcessor {
 	maxQueueSize := env.BatchSpanProcessorMaxQueueSize(DefaultMaxQueueSize)
 	maxExportBatchSize := env.BatchSpanProcessorMaxExportBatchSize(DefaultMaxExportBatchSize)
 
@@ -100,12 +101,13 @@ func NewBatchSpanProcessor(exporter trace.SpanExporter, options ...BatchSpanProc
 		opt(&o)
 	}
 	bsp := &batchSpanProcessor{
-		e:      exporter,
-		o:      o,
-		batch:  make([]trace.ReadOnlySpan, 0, o.MaxExportBatchSize),
-		timer:  time.NewTimer(o.BatchTimeout),
-		queue:  make(chan trace.ReadOnlySpan, o.MaxQueueSize),
-		stopCh: make(chan struct{}),
+		e:          exporter,
+		o:          o,
+		batch:      make([]trace.ReadOnlySpan, 0, o.MaxExportBatchSize),
+		batchSpans: make(map[otrace.SpanID]struct{}),
+		timer:      time.NewTimer(o.BatchTimeout),
+		queue:      make(chan trace.ReadOnlySpan, o.MaxQueueSize),
+		stopCh:     make(chan struct{}),
 	}
 
 	bsp.stopWait.Add(1)
@@ -118,20 +120,18 @@ func NewBatchSpanProcessor(exporter trace.SpanExporter, options ...BatchSpanProc
 	return bsp
 }
 
-// OnStart method does nothing.
-func (bsp *batchSpanProcessor) OnStart(parent context.Context, s trace.ReadWriteSpan) {}
+// OnStart method enqueues a trace.ReadOnlySpan for later processing.
+func (bsp *batchSpanProcessor) OnStart(parent context.Context, s trace.ReadWriteSpan) {
+	bsp.enqueue(s)
+}
+
+// OnUpdate method enqueues a trace.ReadOnlySpan for later processing.
+func (bsp *batchSpanProcessor) OnUpdate(s trace.ReadOnlySpan) {
+	bsp.enqueue(s)
+}
 
 // OnEnd method enqueues a trace.ReadOnlySpan for later processing.
 func (bsp *batchSpanProcessor) OnEnd(s trace.ReadOnlySpan) {
-	// Do not enqueue spans after Shutdown.
-	if bsp.stopped.Load() {
-		return
-	}
-
-	// Do not enqueue spans if we are just going to drop them.
-	if bsp.e == nil {
-		return
-	}
 	bsp.enqueue(s)
 }
 
@@ -277,6 +277,7 @@ func (bsp *batchSpanProcessor) exportSpans(ctx context.Context) error {
 		// It is up to the exporter to implement any type of retry logic if a batch is failing
 		// to be exported, since it is specific to the protocol and backend being sent to.
 		bsp.batch = bsp.batch[:0]
+		bsp.batchSpans = make(map[otrace.SpanID]struct{})
 
 		if err != nil {
 			return err
@@ -307,7 +308,7 @@ func (bsp *batchSpanProcessor) processQueue() {
 				continue
 			}
 			bsp.batchMutex.Lock()
-			bsp.batch = append(bsp.batch, sd)
+			bsp.addToBatch(sd)
 			shouldExport := len(bsp.batch) >= bsp.o.MaxExportBatchSize
 			bsp.batchMutex.Unlock()
 			if shouldExport {
@@ -320,6 +321,14 @@ func (bsp *batchSpanProcessor) processQueue() {
 			}
 		}
 	}
+}
+
+func (bsp *batchSpanProcessor) addToBatch(sd trace.ReadOnlySpan) {
+	if _, ok := bsp.batchSpans[sd.SpanContext().SpanID()]; ok {
+		return
+	}
+	bsp.batchSpans[sd.SpanContext().SpanID()] = struct{}{}
+	bsp.batch = append(bsp.batch, sd)
 }
 
 // drainQueue awaits the any caller that had added to bsp.stopWait
@@ -336,7 +345,7 @@ func (bsp *batchSpanProcessor) drainQueue() {
 			}
 
 			bsp.batchMutex.Lock()
-			bsp.batch = append(bsp.batch, sd)
+			bsp.addToBatch(sd)
 			shouldExport := len(bsp.batch) == bsp.o.MaxExportBatchSize
 			bsp.batchMutex.Unlock()
 
@@ -357,6 +366,17 @@ func (bsp *batchSpanProcessor) drainQueue() {
 
 func (bsp *batchSpanProcessor) enqueue(sd trace.ReadOnlySpan) {
 	ctx := context.TODO()
+
+	// Do not enqueue spans after Shutdown.
+	if bsp.stopped.Load() {
+		return
+	}
+
+	// Do not enqueue spans if we are just going to drop them.
+	if bsp.e == nil {
+		return
+	}
+
 	if bsp.o.BlockOnQueueFull {
 		bsp.enqueueBlockOnQueueFull(ctx, sd)
 	} else {

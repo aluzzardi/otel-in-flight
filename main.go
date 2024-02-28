@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -16,7 +19,23 @@ import (
 func main() {
 	ctx := context.Background()
 
-	exp, err := stdouttrace.New()
+	var (
+		exp trace.SpanExporter
+		err error
+	)
+
+	if token := os.Getenv("DAGGER_CLOUD_TOKEN"); token != "" {
+		exp, err = otlptracehttp.New(ctx,
+			otlptracehttp.WithInsecure(),
+			otlptracehttp.WithEndpoint("localhost:8020"),
+			otlptracehttp.WithHeaders(map[string]string{
+				"Authorization": fmt.Sprintf("Bearer %s", token),
+			}),
+			otlptracehttp.WithCompression(otlptracehttp.NoCompression), // FIXME... ? http.Client should compress anyway?
+		)
+	} else {
+		exp, err = stdouttrace.New()
+	}
 	if err != nil {
 		panic(err)
 	}

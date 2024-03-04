@@ -6,10 +6,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/aluzzardi/otel-in-flight/log"
+	"github.com/aluzzardi/otel-in-flight/log/otlploghttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	olog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -62,8 +65,10 @@ func main() {
 	tr := otel.Tracer("dagger")
 
 	var span otrace.Span
-	_, span = tr.Start(ctx, "hello")
+	ctx, span = tr.Start(ctx, "hello")
 	defer span.End()
+
+	testLogs(ctx)
 
 	for i := 0; i < 5; i++ {
 		span.AddEvent("event", otrace.WithAttributes(attribute.Int("i", i)))
@@ -78,4 +83,25 @@ func main() {
 	}
 
 	time.Sleep(1 * time.Second)
+}
+
+func testLogs(ctx context.Context) {
+	lp := log.NewLoggerProvider()
+	lr := lp.Logger("dagger")
+	lexp := otlploghttp.NewClient(otlploghttp.Config{
+		Endpoint: "localhost:8020",
+		URLPath:  "/v1/logs",
+		Insecure: true,
+		Headers: map[string]string{
+			"Authorization": fmt.Sprintf("Bearer %s", os.Getenv("DAGGER_CLOUD_TOKEN")),
+		},
+	})
+	lproc := log.NewLogProcessor(lexp)
+	lp.RegisterSpanProcessor(lproc)
+
+	r := olog.Record{}
+	r.SetBody(olog.StringValue("hello world"))
+	r.SetTimestamp(time.Now())
+	r.AddAttributes(olog.String("foo", "bar"))
+	lr.Emit(ctx, r)
 }

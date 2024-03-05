@@ -25,19 +25,19 @@ type LogProcessor interface {
 	Shutdown(context.Context) error
 }
 
-var _ LogProcessor = &logProcessor{}
+var _ LogProcessor = &simpleLogProcessor{}
 
-type logProcessor struct {
+type simpleLogProcessor struct {
 	exporter LogExporter
 }
 
-func NewLogProcessor(exporter LogExporter) LogProcessor {
-	return &logProcessor{
+func NewSimpleLogProcessor(exporter LogExporter) LogProcessor {
+	return &simpleLogProcessor{
 		exporter: exporter,
 	}
 }
 
-func (p *logProcessor) OnEmit(ctx context.Context, r log.Record) {
+func (p *simpleLogProcessor) OnEmit(ctx context.Context, r log.Record) {
 	span := trace.SpanFromContext(ctx)
 
 	log := &LogData{
@@ -51,6 +51,6 @@ func (p *logProcessor) OnEmit(ctx context.Context, r log.Record) {
 	}
 }
 
-func (bsp *logProcessor) Shutdown(ctx context.Context) error {
+func (bsp *simpleLogProcessor) Shutdown(ctx context.Context) error {
 	return nil
 }

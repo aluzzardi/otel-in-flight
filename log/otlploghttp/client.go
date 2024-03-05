@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"io"
 	"net"
@@ -95,7 +94,6 @@ func (d *client) ExportLogs(ctx context.Context, logs []*log.LogData) error {
 	pbRequest := &collogspb.ExportLogsServiceRequest{
 		ResourceLogs: transform.Logs(logs),
 	}
-	fmt.Fprintf(os.Stderr, "LOG REQ: %s\n", pbRequest.String())
 
 	rawRequest, err := proto.Marshal(pbRequest)
 	if err != nil {

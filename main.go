@@ -96,12 +96,21 @@ func testLogs(ctx context.Context) {
 			"Authorization": fmt.Sprintf("Bearer %s", os.Getenv("DAGGER_CLOUD_TOKEN")),
 		},
 	})
-	lproc := log.NewLogProcessor(lexp)
+	lproc := log.NewBatchLogProcessor(lexp, log.WithBatchTimeout(1*time.Second))
+	defer lproc.Shutdown(ctx)
 	lp.RegisterSpanProcessor(lproc)
 
+	for i := 0; i < 10; i++ {
+		r := olog.Record{}
+		r.SetBody(olog.StringValue("hello world"))
+		r.SetTimestamp(time.Now())
+		r.AddAttributes(olog.Int("count", i))
+		lr.Emit(ctx, r)
+		time.Sleep(100 * time.Millisecond)
+	}
+	time.Sleep(1 * time.Second)
 	r := olog.Record{}
-	r.SetBody(olog.StringValue("hello world"))
+	r.SetBody(olog.StringValue("the end"))
 	r.SetTimestamp(time.Now())
-	r.AddAttributes(olog.String("foo", "bar"))
 	lr.Emit(ctx, r)
 }

@@ -8,8 +8,6 @@ import (
 
 	"github.com/aluzzardi/otel-in-flight/env"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/log"
-	otrace "go.opentelemetry.io/otel/trace"
 )
 
 // Defaults for BatchSpanProcessorOptions.
@@ -118,15 +116,7 @@ func NewBatchLogProcessor(exporter LogExporter, options ...BatchLogProcessorOpti
 	return bsp
 }
 
-func (bsp *batchLogProcessor) OnEmit(ctx context.Context, r log.Record) {
-	span := otrace.SpanFromContext(ctx)
-
-	log := &LogData{
-		Record:  r,
-		TraceID: span.SpanContext().TraceID(),
-		SpanID:  span.SpanContext().SpanID(),
-	}
-
+func (bsp *batchLogProcessor) OnEmit(ctx context.Context, log *LogData) {
 	bsp.enqueue(log)
 }
 

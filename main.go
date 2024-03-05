@@ -86,7 +86,13 @@ func main() {
 }
 
 func testLogs(ctx context.Context) {
-	lp := log.NewLoggerProvider()
+	lp := log.NewLoggerProvider(
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("dagger"),
+			semconv.ServiceVersionKey.String("v0.1.0"),
+		),
+	)
 	lr := lp.Logger("dagger")
 	lexp := otlploghttp.NewClient(otlploghttp.Config{
 		Endpoint: "localhost:8020",

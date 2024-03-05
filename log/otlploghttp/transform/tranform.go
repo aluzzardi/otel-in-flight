@@ -52,9 +52,11 @@ func Logs(sdl []*log.LogData) []*logspb.ResourceLogs {
 			resources++
 			// The resource was unknown.
 			rs = &logspb.ResourceLogs{
-				// Resource:   Resource(sd.Resource()),
+				Resource:  Resource(sd.Resource),
 				ScopeLogs: []*logspb.ScopeLogs{scopeLog},
-				// SchemaUrl: sd.Resource().SchemaURL(),
+			}
+			if sd.Resource != nil {
+				rs.SchemaUrl = sd.Resource.SchemaURL()
 			}
 			rsm[rKey] = rs
 			continue

@@ -21,7 +21,7 @@ type LogData struct {
 }
 
 type LogProcessor interface {
-	OnEmit(context.Context, log.Record)
+	OnEmit(context.Context, *LogData)
 	Shutdown(context.Context) error
 }
 
@@ -37,15 +37,7 @@ func NewSimpleLogProcessor(exporter LogExporter) LogProcessor {
 	}
 }
 
-func (p *simpleLogProcessor) OnEmit(ctx context.Context, r log.Record) {
-	span := trace.SpanFromContext(ctx)
-
-	log := &LogData{
-		Record:  r,
-		TraceID: span.SpanContext().TraceID(),
-		SpanID:  span.SpanContext().SpanID(),
-	}
-
+func (p *simpleLogProcessor) OnEmit(ctx context.Context, log *LogData) {
 	if err := p.exporter.ExportLogs(ctx, []*LogData{log}); err != nil {
 		otel.Handle(err)
 	}

@@ -146,7 +146,7 @@ func logRecord(l *log.LogData) *logspb.LogRecord {
 	s := &logspb.LogRecord{
 		TimeUnixNano:   uint64(l.Timestamp().UnixNano()),
 		SeverityNumber: logspb.SeverityNumber(l.Severity()),
-		SeverityText:   l.Severity().String(),
+		SeverityText:   l.SeverityText(),
 		Body:           logValue(l.Body()),
 		Attributes:     attrs,
 		// DroppedAttributesCount: 0,
